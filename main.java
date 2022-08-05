@@ -54,7 +54,8 @@ class Body{
   float vx;
   float vy;
   float mass;
-  public Body(float xPos, float yPos, float pxPos, float pyPos, float m){
+  int id;
+  public Body(float xPos, float yPos, float pxPos, float pyPos, float m, int i){
     x = xPos;
     y = yPos;
     px = pxPos;
@@ -62,6 +63,7 @@ class Body{
     mass = m;
     vx = 0;
     vy = 0;
+    id = i;
   }
   
   public boolean in(Quad q){
@@ -75,7 +77,7 @@ class Body{
   }
   
   Body add(Body a, Body b){
-    return new Body(0, 0, 10, 10, 10);
+    return new Body(0, 0, 10, 10, 10, bodies.size());
   }
   
   public void updatePosition(){
@@ -93,6 +95,7 @@ class BHTree {
   private BHTree NE;
   private BHTree SW;
   private BHTree SE;
+  public BHTree parent;
   
   private int level;
   
@@ -103,9 +106,10 @@ class BHTree {
   
   public boolean empty;
   
-  public BHTree(Quad q, int l){
+  public BHTree(Quad q, int l, BHTree p){
     quad = q;
     level = l;
+    parent = p;
     empty = false;
   }
   public void insert(Body b){
@@ -115,7 +119,7 @@ class BHTree {
       py = body.y;
       mass += body.mass;
       empty = true;
-      bodyArchive = new Body(b.x, b.y, b.px, b.py, b.mass);
+      bodyArchive = new Body(b.x, b.y, b.px, b.py, b.mass, b.id);
       
     } else {
       //update center of mass
@@ -124,13 +128,13 @@ class BHTree {
       mass += b.mass;
       
       Body other = null;
-      if(body != null && empty == false) other = new Body(body.x, body.y, body.px, body.py, body.mass); //body
+      if(body != null && empty == false) other = new Body(body.x, body.y, body.px, body.py, body.mass, body.id); //body
       body = null;
       empty = false;
-      if (NW == null) NW = new BHTree(quad.NW(), level + 1);
-      if (NE == null) NE = new BHTree(quad.NE(), level + 1);
-      if (SW == null) SW = new BHTree(quad.SW(), level + 1);
-      if (SE == null) SE = new BHTree(quad.SE(), level + 1);
+      if (NW == null) NW = new BHTree(quad.NW(), level + 1, this);
+      if (NE == null) NE = new BHTree(quad.NE(), level + 1, this);
+      if (SW == null) SW = new BHTree(quad.SW(), level + 1, this);
+      if (SE == null) SE = new BHTree(quad.SE(), level + 1, this);
       if(other != null){
         if(NW.quad.contains(other.x, other.y)){
           NW.insert(other);
@@ -179,7 +183,6 @@ class BHTree {
   }
   
   PVector calculateForce(float x1, float y1, float m1, float x2, float y2, float m2){
-    float G = 0.0006;
     float angle = atan2(y2 - y1, x2 - x1);
     float force = (m1 * m2) / dist(x1, y1, x2, y2) * G;
     
@@ -187,6 +190,60 @@ class BHTree {
     float fy = sin(angle) * force;
     
     return new PVector(fx, fy);
+  }
+  
+  void detectCollisions(){
+    if (body != null){
+       if(parent != null){
+         if(parent.NW.body != null && parent.NW != this){
+           if(dist(body.x, body.y, parent.NW.body.x, parent.NW.body.y) < 10){
+             //collision
+             handleCollision(body, parent.NW.body);
+           }
+         }
+         if(parent.NE.body != null && parent.NE != this){
+           if(dist(body.x, body.y, parent.NE.body.x, parent.NE.body.y) < 10){
+             //collision
+             handleCollision(body, parent.NE.body);
+           }
+         }
+         if(parent.SW.body != null && parent.SW != this){
+           if(dist(body.x, body.y, parent.SW.body.x, parent.SW.body.y) < 10){
+             //collision
+             handleCollision(body, parent.SW.body);
+           }
+         }
+         if(parent.SE.body != null && parent.SE != this){
+           if(dist(body.x, body.y, parent.SE.body.x, parent.SE.body.y) < 10){
+             //collision
+             handleCollision(body, parent.SE.body);
+           }
+         }
+       }
+    } else {
+      //recursively call this function on children nodes
+      if(NW != null){
+        NW.detectCollisions();
+        NE.detectCollisions();
+        SW.detectCollisions();
+        SE.detectCollisions();
+      }
+    }
+  }
+  
+  void handleCollision(Body b1, Body b2){// body1 & body2
+    float x = (b1.x + b2.x) / 2;
+    float y = (b1.y + b2.y) / 2;
+    float vx = ((b1.vx * b1.mass) + (b2.vx * b2.mass)) / (b1.mass + b2.mass);
+    float vy = ((b1.vy * b1.mass) + (b2.vy * b2.mass)) / (b1.mass + b2.mass);
+    float mass = b1.mass + b2.mass;
+    
+    Body b3 = new Body(x, y, 0, 0, mass, bodies.size());//size of bodies works out to be the correct id with the two bodies deleted later
+    b3.vx = vx;
+    b3.vy = vy;
+    bodies.add(b3);
+    bodies.remove(b1);
+    bodies.remove(b2);
   }
   
   void render(){
@@ -199,7 +256,8 @@ class BHTree {
     }
     
     if(bodyArchive != null) {
-      ellipse(bodyArchive.x, bodyArchive.y, 5, 5);
+      size = bodyArchive.mass / 3;
+      ellipse(bodyArchive.x, bodyArchive.y, size, size);
     }
     
     fill(color(25, 65, 250));
@@ -215,53 +273,103 @@ class BHTree {
   }
 }
 
+void clusterSetup() {
+  final int V = 3;
+  
+  for(int i = 0; i < count; i++){
+    float x = (float)random(400, 550);
+    float y = (float)random(400, 550);
+    float mass = (float)random(1, 20);
+    float vy = random(-V, V);
+    float vx = random(-V, V);
+    
+    Body newBody = new Body(x, y, 0, 0, mass, i);
+    newBody.vx = vx;
+    newBody.vy = vy;
+    bodies.add(newBody);
+  }
+}
+
+void spiralSetup(){
+    for(int i = 0; i < count; i++){
+    
+    float angle = ((float)i / (float)count) * PI * 2;
+    float distance = random(0, 598);
+    
+    float x = 599 + cos(angle) * distance;
+    float y = 599 + sin(angle) * distance;
+    float mass = (float)random(1, 20);
+    float vy = 0;
+    float vx = 0;
+    
+    Body newBody = new Body(x, y, 0, 0, mass, i);
+    newBody.vx = vx;
+    newBody.vy = vy;
+    bodies.add(newBody);
+  }
+}
+
+void orbitSetup(){
+    for(int i = 0; i < count; i++){
+    float avgMass = 10.5;
+    float totalMass = avgMass * count;
+    
+    float angle = ((float)i / (float)count) * 360;
+    float distance = random(0, 598);
+    
+    float travelAngle = angle + PI / 2;
+    float travelSpeed = sqrt((G * totalMass) / distance) * 35;
+    println(travelSpeed);
+    
+    float x = 599 + cos(angle) * distance;
+    float y = 599 + sin(angle) * distance;
+    float mass = (float)random(1, 20);
+    float vy = sin(travelAngle) * travelSpeed;
+    float vx = cos(travelAngle) * travelSpeed;
+    
+    Body newBody = new Body(x, y, 0, 0, mass, i);
+    newBody.vx = vx;
+    newBody.vy = vy;
+    bodies.add(newBody);
+  }
+}
+
 BHTree tree;
-Body[] bodies = new Body[50000];
+ArrayList<Body> bodies = new ArrayList<Body>();
 
-int count = 2000;
+float G = 0.0006;
 
-boolean showBHTree = true;
-boolean showCenterOfMass = true;
+int count = 100;
+
+boolean showBHTree = false;
+boolean showCenterOfMass = false;
 
 void setup(){
   size(1200, 1200);
   background(10, 10, 10);
   
-  final int V = 3;
-  
-  for(int i = 0; i < count; i++){
-    float x = (float)random(1, 1199);
-    float y = (float)random(1, 1199);
-    float mass = (float)random(1, 20);
-    float vy = random(-V, V);
-    float vx = random(-V, V);
-    
-    Body newBody = new Body(x, y, 0, 0, mass);
-    newBody.vx = vx;
-    newBody.vy = vy;
-    bodies[i] = newBody;
-  }
+  //clusterSetup();
+  clusterSetup();
 }
 
 void draw(){
   background(10, 10, 10);
-  tree = new BHTree(new Quad(new PVector(1, 1199), 1198), 0);
-  for(int i = 0; i < count; i++){
-    if(bodies[i] == null) continue;
-    tree.insert(bodies[i]);
+  tree = new BHTree(new Quad(new PVector(1, 1199), 1198), 0, null);
+  for(int i = 0; i < bodies.size(); i++){
+    if(bodies.get(i) == null) continue;
+    tree.insert(bodies.get(i));
     
-    tree.updateForces(bodies[i]);
-    bodies[i].updatePosition();
+    tree.updateForces(bodies.get(i));
+    bodies.get(i).updatePosition();
   }
-      print("\n");
   tree.render();
 }
 
 void mouseClicked(){
   float x = mouseX;
   float y = mouseY;
-  Body body = new Body(x, y, 0, 0, 1);
-  bodies[count] = body;
+  Body body = new Body(x, y, 0, 0, 1, bodies.size());
+  bodies.add(body);
   count += 1;
   //(count);
 }
