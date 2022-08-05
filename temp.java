@@ -46,13 +46,11 @@ class Quad{
   }
 }
 
-class Body{
+class Body implements Cloneable{
   float x;
   float y;
   float px;
   float py;
-  float vx;
-  float vy;
   float mass;
   public Body(float xPos, float yPos, float pxPos, float pyPos, float m){
     x = xPos;
@@ -60,8 +58,6 @@ class Body{
     px = pxPos;
     py = pyPos;
     mass = m;
-    vx = 0;
-    vy = 0;
   }
   
   public boolean in(Quad q){
@@ -78,16 +74,10 @@ class Body{
     return new Body(0, 0, 10, 10, 10);
   }
   
-  public void updatePosition(){
-    x += vx;
-    y += vy;
-  }
-  
 }
 
 class BHTree {
   private Body body;
-  public Body bodyArchive;
   private Quad quad;
   private BHTree NW;
   private BHTree NE;
@@ -101,21 +91,16 @@ class BHTree {
   private float py;
   private float mass = 0;
   
-  public boolean empty;
-  
   public BHTree(Quad q, int l){
     quad = q;
     level = l;
-    empty = false;
   }
   public void insert(Body b){
-    if((!empty && NW == null)){
+    if(body == null && NW == null){
       body = b;
       px = body.x;
       py = body.y;
       mass += body.mass;
-      empty = true;
-      bodyArchive = new Body(b.x, b.y, b.px, b.py, b.mass);
       
     } else {
       //update center of mass
@@ -124,9 +109,8 @@ class BHTree {
       mass += b.mass;
       
       Body other = null;
-      if(body != null && empty == false) other = new Body(body.x, body.y, body.px, body.py, body.mass); //body
+      if(body != null) other = new Body(body.x, body.y, body.px, body.py, body.mass); //body
       body = null;
-      empty = false;
       if (NW == null) NW = new BHTree(quad.NW(), level + 1);
       if (NE == null) NE = new BHTree(quad.NE(), level + 1);
       if (SW == null) SW = new BHTree(quad.SW(), level + 1);
@@ -154,39 +138,29 @@ class BHTree {
     }
   }
   
-  void updateForces(Body b){
-    if(bodyArchive == null) return;
+  void updateForce(Body b){
     float theta = 0.5;
-    if(NW == null){// if this is an external node
-      if(b != body && b != bodyArchive){
-        PVector force = calculateForce(b.x, b.y, b.mass, bodyArchive.x, bodyArchive.y, bodyArchive.mass);
-        b.vx += force.x;
-        b.vy += force.y;
+    if(NW == null && body != null){// if this is an external node
+      if(b != body){
+        //calculate and add force
       }
     }
-    float sd = quad.getSize() / dist(b.x, b.y, bodyArchive.x, bodyArchive.y);
+    float sd = quad.getSize() / dist(b.x, b.y, body.x, body.y);
     
     if(sd < theta){
-        PVector force = calculateForce(b.x, b.y, b.mass, px, py, mass);
-        b.vx += force.x;
-        b.vy += force.y;
+      //calculate and add force
     } else {
-      if(NW != null) NW.updateForces(b);
-      if(NW != null) NE.updateForces(b);
-      if(NW != null) SW.updateForces(b);
-      if(NW != null) SE.updateForces(b);
+      NW.updateForce(b);
+      NE.updateForce(b);
+      SW.updateForce(b);
+      SE.updateForce(b);
     }
   }
   
-  PVector calculateForce(float x1, float y1, float m1, float x2, float y2, float m2){
-    float G = 0.0006;
+  PVector calculateForce(x1, y1, m1, x2, y2, m2){
     float angle = atan2(y2 - y1, x2 - x1);
-    float force = (m1 * m2) / dist(x1, y1, x2, y2) * G;
     
-    float fx = cos(angle) * force;
-    float fy = sin(angle) * force;
-    
-    return new PVector(fx, fy);
+    return 0;
   }
   
   void render(){
@@ -198,8 +172,8 @@ class BHTree {
       rect(quad.lowerLeft.x, quad.lowerLeft.y - size, size, size);
     }
     
-    if(bodyArchive != null) {
-      ellipse(bodyArchive.x, bodyArchive.y, 5, 5);
+    if(body != null) {
+      ellipse(body.x, body.y, .5, .5);
     }
     
     fill(color(25, 65, 250));
@@ -215,52 +189,33 @@ class BHTree {
   }
 }
 
-BHTree tree;
-Body[] bodies = new Body[50000];
+void setup(){
+  size(800, 800);
+  background(10, 10, 10);
+}
 
-int count = 2000;
+
+BHTree tree;
+Body[] bodies = new Body[500];
+int count = 0;
 
 boolean showBHTree = true;
 boolean showCenterOfMass = true;
 
-void setup(){
-  size(1200, 1200);
-  background(10, 10, 10);
-  
-  final int V = 3;
-  
-  for(int i = 0; i < count; i++){
-    float x = (float)random(1, 1199);
-    float y = (float)random(1, 1199);
-    float mass = (float)random(1, 20);
-    float vy = random(-V, V);
-    float vx = random(-V, V);
-    
-    Body newBody = new Body(x, y, 0, 0, mass);
-    newBody.vx = vx;
-    newBody.vy = vy;
-    bodies[i] = newBody;
-  }
-}
-
 void draw(){
   background(10, 10, 10);
-  tree = new BHTree(new Quad(new PVector(1, 1199), 1198), 0);
+  tree = new BHTree(new Quad(new PVector(1, 799), 798), 0);
   for(int i = 0; i < count; i++){
     if(bodies[i] == null) continue;
     tree.insert(bodies[i]);
-    
-    tree.updateForces(bodies[i]);
-    bodies[i].updatePosition();
   }
-      print("\n");
   tree.render();
 }
 
 void mouseClicked(){
   float x = mouseX;
   float y = mouseY;
-  Body body = new Body(x, y, 0, 0, 1);
+  Body body = new Body(x, y, 0, 0, 10);
   bodies[count] = body;
   count += 1;
   //(count);
