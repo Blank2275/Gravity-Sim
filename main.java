@@ -54,8 +54,8 @@ class Body{
   float vx;
   float vy;
   float mass;
-  int id;
-  public Body(float xPos, float yPos, float pxPos, float pyPos, float m, int i){
+  Body original;
+  public Body(float xPos, float yPos, float pxPos, float pyPos, float m, Body b){
     x = xPos;
     y = yPos;
     px = pxPos;
@@ -63,7 +63,7 @@ class Body{
     mass = m;
     vx = 0;
     vy = 0;
-    id = i;
+    original = b;
   }
   
   public boolean in(Quad q){
@@ -77,7 +77,7 @@ class Body{
   }
   
   Body add(Body a, Body b){
-    return new Body(0, 0, 10, 10, 10, bodies.size());
+    return new Body(0, 0, 10, 10, 10, null);
   }
   
   public void updatePosition(){
@@ -119,7 +119,7 @@ class BHTree {
       py = body.y;
       mass += body.mass;
       empty = true;
-      bodyArchive = new Body(b.x, b.y, b.px, b.py, b.mass, b.id);
+      bodyArchive = new Body(b.x, b.y, b.px, b.py, b.mass, null);
       
     } else {
       //update center of mass
@@ -128,7 +128,7 @@ class BHTree {
       mass += b.mass;
       
       Body other = null;
-      if(body != null && empty == false) other = new Body(body.x, body.y, body.px, body.py, body.mass, body.id); //body
+      if(body != null && empty == false) other = new Body(body.x, body.y, body.px, body.py, body.mass, b); //body
       body = null;
       empty = false;
       if (NW == null) NW = new BHTree(quad.NW(), level + 1, this);
@@ -186,64 +186,81 @@ class BHTree {
     float angle = atan2(y2 - y1, x2 - x1);
     float force = (m1 * m2) / dist(x1, y1, x2, y2) * G;
     
-    float fx = cos(angle) * force;
-    float fy = sin(angle) * force;
+    float fx = cos(angle) * force / m1;
+    float fy = sin(angle) * force / m1;
     
     return new PVector(fx, fy);
   }
   
-  void detectCollisions(){
-    if (body != null){
-       if(parent != null){
-         if(parent.NW.body != null && parent.NW != this){
-           if(dist(body.x, body.y, parent.NW.body.x, parent.NW.body.y) < 10){
-             //collision
-             handleCollision(body, parent.NW.body);
-           }
-         }
-         if(parent.NE.body != null && parent.NE != this){
-           if(dist(body.x, body.y, parent.NE.body.x, parent.NE.body.y) < 10){
-             //collision
-             handleCollision(body, parent.NE.body);
-           }
-         }
-         if(parent.SW.body != null && parent.SW != this){
-           if(dist(body.x, body.y, parent.SW.body.x, parent.SW.body.y) < 10){
-             //collision
-             handleCollision(body, parent.SW.body);
-           }
-         }
-         if(parent.SE.body != null && parent.SE != this){
-           if(dist(body.x, body.y, parent.SE.body.x, parent.SE.body.y) < 10){
-             //collision
-             handleCollision(body, parent.SE.body);
-           }
-         }
-       }
+  void searchForCollisionArea(Body b){
+    float checkDistance = b.mass / 3 * 2;
+    if((quad.getSize() < checkDistance) || NW == null){
+      checkForCollisions(b);
     } else {
-      //recursively call this function on children nodes
       if(NW != null){
-        NW.detectCollisions();
-        NE.detectCollisions();
-        SW.detectCollisions();
-        SE.detectCollisions();
+        if(NW.quad.contains(b.x, b.y)){
+          NW.searchForCollisionArea(b);
+        }
+        if(NE.quad.contains(b.x, b.y)){
+          NE.searchForCollisionArea(b);
+        }
+        if(SW.quad.contains(b.x, b.y)){
+          SW.searchForCollisionArea(b);
+        }
+        if(SE.quad.contains(b.x, b.y)){
+          SE.searchForCollisionArea(b);
+        }
+      }
+    }
+  }
+  
+  void checkForCollisions(Body b){
+    if(body != null){
+      float collisionDist = (body.mass + b.mass) / 3;
+      if(dist(body.x, body.y, b.x, b.y) < collisionDist){
+        handleCollision(body, b);
+      }
+    } else{
+      if(NW != null){
+        NW.checkForCollisions(b);
+        NE.checkForCollisions(b);
+        SW.checkForCollisions(b);
+        SE.checkForCollisions(b);
       }
     }
   }
   
   void handleCollision(Body b1, Body b2){// body1 & body2
+    if(!bodiesToDeleteIncludes(b1) && !bodiesToDeleteIncludes(b2)){
     float x = (b1.x + b2.x) / 2;
-    float y = (b1.y + b2.y) / 2;
-    float vx = ((b1.vx * b1.mass) + (b2.vx * b2.mass)) / (b1.mass + b2.mass);
-    float vy = ((b1.vy * b1.mass) + (b2.vy * b2.mass)) / (b1.mass + b2.mass);
-    float mass = b1.mass + b2.mass;
-    
-    Body b3 = new Body(x, y, 0, 0, mass, bodies.size());//size of bodies works out to be the correct id with the two bodies deleted later
-    b3.vx = vx;
-    b3.vy = vy;
-    bodies.add(b3);
-    bodies.remove(b1);
-    bodies.remove(b2);
+      float y = (b1.y + b2.y) / 2;
+      float vx = ((b1.vx * b1.mass) + (b2.vx * b2.mass)) / (b1.mass + b2.mass);
+      float vy = ((b1.vy * b1.mass) + (b2.vy * b2.mass)) / (b1.mass + b2.mass);
+      float mass = b1.mass + b2.mass;
+      
+      Body b3 = new Body(x, y, 0, 0, mass, null);//size of bodies works out to be the correct id with the two bodies deleted later
+      b3.vx = vx;
+      b3.vy = vy;
+      bodies.add(b3);
+      
+      //println(bodies.size());
+      removeFromBodies(b1);
+      removeFromBodies(b2);
+      //print(bodies.size());
+      //print("\n");
+      //print("\n");
+    }
+  }
+  
+  boolean bodiesToDeleteIncludes(Body b){
+    for(Body body: bodiesToDelete){
+      if (b.equals(body)) return true;
+    }
+    return false;
+  }
+  
+  void removeFromBodies(Body b){
+    bodiesToDelete.add(b);
   }
   
   void render(){
@@ -283,7 +300,7 @@ void clusterSetup() {
     float vy = random(-V, V);
     float vx = random(-V, V);
     
-    Body newBody = new Body(x, y, 0, 0, mass, i);
+    Body newBody = new Body(x, y, 0, 0, mass, null);
     newBody.vx = vx;
     newBody.vy = vy;
     bodies.add(newBody);
@@ -302,7 +319,7 @@ void spiralSetup(){
     float vy = 0;
     float vx = 0;
     
-    Body newBody = new Body(x, y, 0, 0, mass, i);
+    Body newBody = new Body(x, y, 0, 0, mass, null);
     newBody.vx = vx;
     newBody.vy = vy;
     bodies.add(newBody);
@@ -327,7 +344,7 @@ void orbitSetup(){
     float vy = sin(travelAngle) * travelSpeed;
     float vx = cos(travelAngle) * travelSpeed;
     
-    Body newBody = new Body(x, y, 0, 0, mass, i);
+    Body newBody = new Body(x, y, 0, 0, mass, null);
     newBody.vx = vx;
     newBody.vy = vy;
     bodies.add(newBody);
@@ -336,10 +353,12 @@ void orbitSetup(){
 
 BHTree tree;
 ArrayList<Body> bodies = new ArrayList<Body>();
+ArrayList<Body> bodiesToDelete = new ArrayList<Body>();
 
-float G = 0.0006;
+float G = 0.006;
 
-int count = 100;
+int count = 1000;
+int placeSize = 1;
 
 boolean showBHTree = false;
 boolean showCenterOfMass = false;
@@ -362,13 +381,37 @@ void draw(){
     tree.updateForces(bodies.get(i));
     bodies.get(i).updatePosition();
   }
+  //tree.detectCollisions(); //search for collision area
+  for(int i = 0; i < bodies.size(); i++){
+    Body body = bodies.get(i);
+    //tree.searchForCollisionArea(body);
+  }
+  for(Body body: bodiesToDelete){
+    println(bodies.size());
+    bodies.remove(body);
+  }
+  bodiesToDelete = new ArrayList<Body>();
+  
+  if(mousePressed){
+    if(frameCount % 2 == 0){
+      for(int i = 0; i < placeSize; i++){
+        float x = mouseX + random(-placeSize, placeSize);
+        float y = mouseY + random(-placeSize, placeSize);
+        float mass = random(1, 20);
+        Body body = new Body(x, y, 0, 0, mass, null);
+        bodies.add(body);
+        count += 1; 
+      }
+    }
+  }
+  
   tree.render();
 }
 
 void mouseClicked(){
   float x = mouseX;
   float y = mouseY;
-  Body body = new Body(x, y, 0, 0, 1, bodies.size());
+  Body body = new Body(x, y, 0, 0, 1, null);
   bodies.add(body);
   count += 1;
   //(count);
@@ -380,5 +423,20 @@ void keyPressed(){
   }
   if(keyCode == 77){//m
     showCenterOfMass = !showCenterOfMass;
+  }
+  if(keyCode == 49){
+    placeSize = 1;
+  }
+  if(keyCode == 50){
+    placeSize = 5;
+  }
+  if(keyCode == 51){
+    placeSize = 10;
+  }
+  if(keyCode == 52){
+    placeSize = 20;
+  }
+  if(keyCode == 32){
+    bodies = new ArrayList<Body>();
   }
 }
